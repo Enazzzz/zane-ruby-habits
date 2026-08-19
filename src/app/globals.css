@@ -1,0 +1,66 @@
+@import "tailwindcss";
+
+:root {
+	color-scheme: dark;
+}
+
+@theme inline {
+	--color-ink: #131f24;
+	--color-panel: #1e2c32;
+	--color-panel-2: #243339;
+	--color-line: #37464f;
+	--color-mute: #afc0c7;
+	--color-snow: #f1f7fb;
+	--color-duo: #58cc02;
+	--color-duo-shadow: #46a302;
+	--color-flame: #ff9600;
+	--color-flame-deep: #e08600;
+	--color-miss: #ff4b4b;
+	--font-sans: var(--font-nunito), ui-rounded, system-ui, sans-serif;
+}
+
+html {
+	background: var(--color-ink);
+}
+
+body {
+	min-height: 100dvh;
+	background:
+		radial-gradient(1200px 600px at 50% -10%, #1d3230 0%, transparent 60%),
+		var(--color-ink);
+	color: var(--color-snow);
+	font-family: var(--font-sans);
+}
+
+.duo-press {
+	box-shadow: 0 6px 0 var(--color-duo-shadow);
+	transition: transform 80ms ease, box-shadow 80ms ease;
+}
+
+.duo-press:hover {
+	filter: brightness(1.05);
+}
+
+.duo-press:active:not(:disabled) {
+	transform: translateY(6px);
+	box-shadow: 0 0 0 var(--color-duo-shadow);
+}
+
+.duo-press:disabled {
+	box-shadow: 0 6px 0 #2e3d44;
+}
+
+@keyframes pop-in {
+	from {
+		transform: scale(0.86);
+		opacity: 0;
+	}
+	to {
+		transform: scale(1);
+		opacity: 1;
+	}
+}
+
+.pop-in {
+	animation: pop-in 220ms ease-out;
+}
