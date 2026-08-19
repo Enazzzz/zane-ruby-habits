@@ -1,17 +1,25 @@
 import { describe, expect, it } from "vitest";
 import { addDays, mondayOf, weekDates, zonedYmd } from "./dates";
 import {
-	bestStreak,
+	bestDailyStreak,
 	buildSnapshot,
+	calledDaySet,
 	countForWeek,
 	countsByDate,
-	currentStreak,
+	currentDailyStreak,
+	daysCalledInWeek,
+	graceRemainingThisWeek,
 } from "./streak";
 import type { CallRecord } from "./types";
 
 /** Builds a call at a known UTC instant. */
 function callAt(iso: string): CallRecord {
 	return { id: iso, at: iso };
+}
+
+/** Turns YYYY-MM-DD civil dates into noon-UTC calls (same calendar day in LA). */
+function callsOn(...days: string[]): CallRecord[] {
+	return days.map((day) => callAt(`${day}T19:00:00.000Z`));
 }
 
 describe("zoned dates", () => {
@@ -35,57 +43,65 @@ describe("zoned dates", () => {
 	});
 });
 
-describe("streak math", () => {
-	it("starts at zero with no completed week", () => {
-		const weeks = [{ weekId: "2026-08-17", count: 3 }];
-		expect(currentStreak(weeks, "2026-08-17", 5)).toBe(0);
-		expect(bestStreak(weeks, "2026-08-17", 5)).toBe(0);
+describe("daily streak with weekly grace", () => {
+	it("is zero with no calls", () => {
+		expect(currentDailyStreak(new Set(), "2026-08-19")).toBe(0);
+		expect(bestDailyStreak(new Set(), "2026-08-19")).toBe(0);
 	});
 
-	it("counts the current week as soon as the goal is hit", () => {
-		const weeks = [{ weekId: "2026-08-17", count: 5 }];
-		expect(currentStreak(weeks, "2026-08-17", 5)).toBe(1);
+	it("counts consecutive called days", () => {
+		const called = new Set(["2026-08-17", "2026-08-18", "2026-08-19"]);
+		expect(currentDailyStreak(called, "2026-08-19")).toBe(3);
+		expect(bestDailyStreak(called, "2026-08-19")).toBe(3);
 	});
 
-	it("keeps last week's streak alive until the current week is over", () => {
-		const weeks = [
-			{ weekId: "2026-08-10", count: 5 },
-			{ weekId: "2026-08-17", count: 2 },
-		];
-		expect(currentStreak(weeks, "2026-08-17", 5)).toBe(1);
+	it("lets two missed days in a week ride on grace without adding to the tally", () => {
+		const called = new Set([
+			"2026-08-17",
+			"2026-08-18",
+			"2026-08-19",
+			"2026-08-22",
+			"2026-08-23",
+		]);
+		expect(currentDailyStreak(called, "2026-08-23")).toBe(5);
+		expect(bestDailyStreak(called, "2026-08-23")).toBe(5);
 	});
 
-	it("extends the streak when this week also hits the goal", () => {
-		const weeks = [
-			{ weekId: "2026-08-03", count: 6 },
-			{ weekId: "2026-08-10", count: 5 },
-			{ weekId: "2026-08-17", count: 5 },
-		];
-		expect(currentStreak(weeks, "2026-08-17", 5)).toBe(3);
+	it("breaks after a third miss in the same week, which is also under five days", () => {
+		const called = new Set([
+			"2026-08-17",
+			"2026-08-18",
+			"2026-08-19",
+			"2026-08-23",
+		]);
+		expect(daysCalledInWeek(called, "2026-08-17")).toBe(4);
+		expect(currentDailyStreak(called, "2026-08-23")).toBe(1);
+		expect(currentDailyStreak(called, "2026-08-24")).toBe(0);
+		expect(bestDailyStreak(called, "2026-08-24")).toBe(3);
 	});
 
-	it("breaks after a missed completed week, then restarts", () => {
-		const weeks = [
-			{ weekId: "2026-08-03", count: 5 },
-			{ weekId: "2026-08-10", count: 1 },
-			{ weekId: "2026-08-17", count: 5 },
-		];
-		expect(currentStreak(weeks, "2026-08-17", 5)).toBe(1);
-		expect(bestStreak(weeks, "2026-08-17", 5)).toBe(1);
+	it("does not treat today as a miss when no call has been logged yet", () => {
+		const called = new Set(["2026-08-17", "2026-08-18"]);
+		expect(currentDailyStreak(called, "2026-08-19")).toBe(2);
+		expect(graceRemainingThisWeek(called, "2026-08-19")).toBe(2);
 	});
 
-	it("treats a skipped week as a break", () => {
-		const weeks = [
-			{ weekId: "2026-08-03", count: 5 },
-			{ weekId: "2026-08-17", count: 5 },
-		];
-		expect(currentStreak(weeks, "2026-08-17", 5)).toBe(1);
-		expect(bestStreak(weeks, "2026-08-17", 5)).toBe(1);
+	it("keeps last week's streak during an open week that still can hit five", () => {
+		const called = new Set([
+			"2026-08-10",
+			"2026-08-11",
+			"2026-08-12",
+			"2026-08-13",
+			"2026-08-14",
+			"2026-08-17",
+			"2026-08-18",
+		]);
+		expect(currentDailyStreak(called, "2026-08-19")).toBe(7);
 	});
 });
 
 describe("buildSnapshot", () => {
-	it("puts two same-day calls on Wednesday and reports 2/5", () => {
+	it("counts two same-day records as one call-day and one all-time call day", () => {
 		const snapshot = buildSnapshot(
 			[
 				callAt("2026-08-19T18:00:00.000Z"),
@@ -95,25 +111,32 @@ describe("buildSnapshot", () => {
 			"file",
 		);
 
-		expect(snapshot.currentCount).toBe(2);
-		expect(snapshot.remaining).toBe(3);
-		expect(snapshot.goalMet).toBe(false);
-		expect(snapshot.days.find((day) => day.date === "2026-08-19")?.count).toBe(2);
-		expect(snapshot.streak).toBe(0);
+		expect(snapshot.currentCount).toBe(1);
+		expect(snapshot.totalCalls).toBe(1);
+		expect(snapshot.calledToday).toBe(true);
+		expect(snapshot.remaining).toBe(4);
+		expect(snapshot.days.find((day) => day.date === "2026-08-19")?.count).toBe(1);
+		expect(snapshot.streak).toBe(1);
+		expect(snapshot.bestStreak).toBe(1);
 	});
 
-	it("counts five calls in the current week as a live streak", () => {
-		const calls = Array.from({ length: 5 }, (_, index) =>
-			callAt(`2026-08-17T18:0${index}:00.000Z`),
-		);
+	it("reports a five-day week as locked in with a live day streak", () => {
 		const snapshot = buildSnapshot(
-			calls,
-			new Date("2026-08-19T18:00:00.000Z"),
+			callsOn(
+				"2026-08-17",
+				"2026-08-18",
+				"2026-08-19",
+				"2026-08-20",
+				"2026-08-21",
+			),
+			new Date("2026-08-21T19:30:00.000Z"),
 			"file",
 		);
 		expect(snapshot.goalMet).toBe(true);
-		expect(snapshot.streak).toBe(1);
-		expect(snapshot.bestStreak).toBe(1);
+		expect(snapshot.streak).toBe(5);
+		expect(snapshot.bestStreak).toBe(5);
+		expect(snapshot.totalCalls).toBe(5);
+		expect(snapshot.graceRemaining).toBe(2);
 	});
 });
 
@@ -123,7 +146,12 @@ describe("day grouping", () => {
 			[callAt("2026-08-19T06:00:00.000Z")],
 			"America/Los_Angeles",
 		);
+		const called = calledDaySet(
+			[callAt("2026-08-19T06:00:00.000Z")],
+			"America/Los_Angeles",
+		);
 		expect(counts.get("2026-08-18")).toBe(1);
+		expect(called.has("2026-08-18")).toBe(true);
 		expect(countForWeek(counts, "2026-08-17")).toBe(1);
 		expect(addDays("2026-08-17", 1)).toBe("2026-08-18");
 	});

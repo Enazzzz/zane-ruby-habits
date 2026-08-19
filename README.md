@@ -1,15 +1,16 @@
 # Zane & Ruby Call Streak
 
-A dark, Duolingo-style habit tracker for **Zane** and **Ruby**. The goal is simple: call each other at least **5 times a week** and see how long the streak lasts.
+A dark, Duolingo-style habit tracker for **Zane** and **Ruby**. Call **once a day**, hit **5 days a week** (two grace misses), and see how long the day streak lasts.
 
 No login. No codes. Open the site, tap **We called** when you hang up.
 
 ## How it works
 
-- One shared log. Each tap is one call between you.
+- One shared log. One call per calendar day.
+- Streaks are counted in **days**. Each week you get **two grace days**.
+- You can call more than 5 days. A finished week with fewer than 5 days **breaks the streak**.
+- The board shows all-time calls and your best day streak.
 - A week runs Monday–Sunday in `America/Los_Angeles`.
-- Hit 5 calls in a week and that week counts.
-- Miss a full week and the streak resets.
 - **Undo last call** if someone taps by accident.
 
 ## Local development

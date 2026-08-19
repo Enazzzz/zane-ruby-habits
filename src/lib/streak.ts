@@ -1,7 +1,8 @@
 import {
-	WEEKLY_GOAL,
+	GRACE_DAYS_PER_WEEK,
 	PEOPLE,
 	TRACKER_TIMEZONE,
+	WEEKLY_GOAL,
 } from "@/lib/config";
 import {
 	addDays,
@@ -17,6 +18,20 @@ import type {
 	TrackerSnapshot,
 	WeekSummary,
 } from "@/lib/types";
+
+/**
+ * Unique civil dates that have at least one call in the tracker timezone.
+ */
+export function calledDaySet(
+	calls: CallRecord[],
+	timeZone: string,
+): Set<string> {
+	const days = new Set<string>();
+	for (const call of calls) {
+		days.add(zonedYmd(new Date(call.at), timeZone));
+	}
+	return days;
+}
 
 /**
  * Groups calls onto civil dates in the tracker timezone.
@@ -51,7 +66,14 @@ export function weekIdsBetween(fromWeekId: string, toWeekId: string): string[] {
 }
 
 /**
- * Counts calls that fall on a given Monday-start week.
+ * Counts unique call-days in a Monday-start week.
+ */
+export function daysCalledInWeek(called: Set<string>, weekId: string): number {
+	return weekDates(weekId).filter((date) => called.has(date)).length;
+}
+
+/**
+ * Counts call records that fall on a given Monday-start week.
  */
 export function countForWeek(
 	dayCounts: Map<string, number>,
@@ -64,70 +86,127 @@ export function countForWeek(
 }
 
 /**
- * Consecutive weeks (newest first) that met the goal.
- * The in-progress week only counts once it has already hit the goal.
- * A missed completed week resets the streak to zero.
+ * Earliest civil date in a set, or null when empty.
  */
-export function currentStreak(
-	weekCounts: Array<{ weekId: string; count: number }>,
-	currentWeekId: string,
-	goal: number,
+function earliestDay(called: Set<string>): string | null {
+	let first: string | null = null;
+	for (const day of called) {
+		if (!first || day < first) {
+			first = day;
+		}
+	}
+	return first;
+}
+
+/**
+ * Current day streak: each called day counts, up to two missed days per week
+ * are grace, and a finished week with fewer than five call-days breaks it.
+ * Today without a call is still open, not a miss.
+ */
+export function currentDailyStreak(
+	called: Set<string>,
+	today: string,
+	floor = WEEKLY_GOAL,
+	gracePerWeek = GRACE_DAYS_PER_WEEK,
 ): number {
-	if (weekCounts.length === 0) {
+	const first = earliestDay(called);
+	if (!first) {
 		return 0;
 	}
 
-	const byId = new Map(weekCounts.map((week) => [week.weekId, week.count]));
-	const newest = weekCounts[weekCounts.length - 1]?.weekId ?? currentWeekId;
-	const oldest = weekCounts[0]?.weekId ?? currentWeekId;
-	const ids = weekIdsBetween(oldest, newest);
-	let cursor = currentWeekId;
-	let streak = 0;
-
-	if ((byId.get(currentWeekId) ?? 0) < goal) {
-		cursor = addDays(currentWeekId, -7);
+	const todayHasCall = called.has(today);
+	let cursor = todayHasCall ? today : addDays(today, -1);
+	if (cursor < first) {
+		return todayHasCall ? 1 : 0;
 	}
 
-	while (cursor >= ids[0]) {
-		if ((byId.get(cursor) ?? 0) < goal) {
+	const currentWeekId = mondayOf(today);
+	const graceUsed = new Map<string, number>();
+	let streak = 0;
+
+	while (cursor >= first) {
+		const weekId = mondayOf(cursor);
+		if (weekId < currentWeekId && daysCalledInWeek(called, weekId) < floor) {
 			break;
 		}
-		streak += 1;
-		cursor = addDays(cursor, -7);
+
+		if (called.has(cursor)) {
+			streak += 1;
+		} else {
+			const used = graceUsed.get(weekId) ?? 0;
+			if (used < gracePerWeek) {
+				graceUsed.set(weekId, used + 1);
+			} else {
+				break;
+			}
+		}
+
+		cursor = addDays(cursor, -1);
 	}
 
 	return streak;
 }
 
 /**
- * Longest run of consecutive goal-hitting weeks, including the current week
- * when it has already met the goal.
+ * Longest day streak ever, using the same grace and weekly-floor rules.
  */
-export function bestStreak(
-	weekCounts: Array<{ weekId: string; count: number }>,
-	currentWeekId: string,
-	goal: number,
+export function bestDailyStreak(
+	called: Set<string>,
+	today: string,
+	floor = WEEKLY_GOAL,
+	gracePerWeek = GRACE_DAYS_PER_WEEK,
 ): number {
-	if (weekCounts.length === 0) {
+	const first = earliestDay(called);
+	if (!first) {
 		return 0;
 	}
 
-	const oldest = weekCounts[0].weekId;
-	const ids = weekIdsBetween(oldest, currentWeekId);
-	const byId = new Map(weekCounts.map((week) => [week.weekId, week.count]));
 	let run = 0;
 	let best = 0;
+	let graceUsed = 0;
+	let weekId = mondayOf(first);
 
-	for (const weekId of ids) {
-		if ((byId.get(weekId) ?? 0) >= goal) {
+	let cursor = first;
+	while (cursor <= today) {
+		const thisWeek = mondayOf(cursor);
+		if (thisWeek !== weekId) {
+			if (daysCalledInWeek(called, weekId) < floor) {
+				run = 0;
+			}
+			graceUsed = 0;
+			weekId = thisWeek;
+		}
+
+		if (called.has(cursor)) {
 			run += 1;
 			best = Math.max(best, run);
-		} else {
-			run = 0;
+		} else if (cursor < today) {
+			if (graceUsed < gracePerWeek) {
+				graceUsed += 1;
+			} else {
+				run = 0;
+			}
 		}
+
+		cursor = addDays(cursor, 1);
 	}
 
 	return best;
+}
+
+/**
+ * Grace days still unused this week, ignoring today and future days.
+ */
+export function graceRemainingThisWeek(
+	called: Set<string>,
+	today: string,
+	gracePerWeek = GRACE_DAYS_PER_WEEK,
+): number {
+	const weekId = mondayOf(today);
+	const misses = weekDates(weekId).filter(
+		(date) => date < today && !called.has(date),
+	).length;
+	return Math.max(0, gracePerWeek - misses);
 }
 
 /**
@@ -140,29 +219,29 @@ export function buildSnapshot(
 	options?: {
 		timeZone?: string;
 		goal?: number;
+		gracePerWeek?: number;
 	},
 ): TrackerSnapshot {
 	const timeZone = options?.timeZone ?? TRACKER_TIMEZONE;
 	const goal = options?.goal ?? WEEKLY_GOAL;
+	const gracePerWeek = options?.gracePerWeek ?? GRACE_DAYS_PER_WEEK;
 	const today = zonedYmd(now, timeZone);
 	const currentWeekId = mondayOf(today);
+	const called = calledDaySet(calls, timeZone);
 	const dayCounts = countsByDate(calls, timeZone);
-	const oldestCallDay = calls.reduce((oldest, call) => {
-		const day = zonedYmd(new Date(call.at), timeZone);
-		return day < oldest ? day : oldest;
-	}, today);
+	const oldestCallDay = earliestDay(called) ?? today;
 	const oldestWeekId = mondayOf(oldestCallDay);
 	const ids = weekIdsBetween(oldestWeekId, currentWeekId);
 	const weekCounts = ids.map((weekId) => ({
 		weekId,
-		count: countForWeek(dayCounts, weekId),
+		count: daysCalledInWeek(called, weekId),
 	}));
 
-	const currentCount = countForWeek(dayCounts, currentWeekId);
+	const currentCount = daysCalledInWeek(called, currentWeekId);
 	const days: DayCell[] = weekDates(currentWeekId).map((date) => ({
 		date,
 		label: weekdayLabel(date),
-		count: dayCounts.get(date) ?? 0,
+		count: Math.min(1, dayCounts.get(date) ?? 0),
 		isToday: date === today,
 		isFuture: date > today,
 	}));
@@ -178,18 +257,19 @@ export function buildSnapshot(
 			isCurrent: week.weekId === currentWeekId,
 		}));
 
-	const streak = currentStreak(weekCounts, currentWeekId, goal);
-	const best = bestStreak(weekCounts, currentWeekId, goal);
-
 	return {
 		people: PEOPLE,
 		timezone: timeZone,
 		goal,
+		gracePerWeek,
+		graceRemaining: graceRemainingThisWeek(called, today, gracePerWeek),
 		currentCount,
 		remaining: Math.max(0, goal - currentCount),
 		goalMet: currentCount >= goal,
-		streak,
-		bestStreak: best,
+		calledToday: called.has(today),
+		streak: currentDailyStreak(called, today, goal, gracePerWeek),
+		bestStreak: bestDailyStreak(called, today, goal, gracePerWeek),
+		totalCalls: called.size,
 		days,
 		recentWeeks,
 		calls: [...calls].sort((a, b) => b.at.localeCompare(a.at)),

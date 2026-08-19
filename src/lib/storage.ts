@@ -121,7 +121,7 @@ export async function addCall(at = new Date()): Promise<CallRecord> {
 	).length;
 
 	if (todayCount >= MAX_CALLS_PER_DAY) {
-		throw new Error("That is plenty of calls for one day.");
+		throw new Error("Already logged today's call.");
 	}
 
 	const record: CallRecord = {

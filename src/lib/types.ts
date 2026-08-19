@@ -36,11 +36,15 @@ export type TrackerSnapshot = {
 	people: readonly string[];
 	timezone: string;
 	goal: number;
+	gracePerWeek: number;
+	graceRemaining: number;
 	currentCount: number;
 	remaining: number;
 	goalMet: boolean;
+	calledToday: boolean;
 	streak: number;
 	bestStreak: number;
+	totalCalls: number;
 	days: DayCell[];
 	recentWeeks: WeekSummary[];
 	calls: CallRecord[];
