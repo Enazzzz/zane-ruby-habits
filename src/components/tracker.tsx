@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState, useSyncExternalStore, useTransition } from "react";
 import { leaveCheckIn, logCall, undoCall } from "@/app/actions";
-import { latestCheckInByName } from "@/lib/checkins";
+import { latestCheckInByName, MAX_CHECKIN_MESSAGE, MAX_CHECKIN_NAME } from "@/lib/checkins";
 import { PEOPLE } from "@/lib/config";
 import { formatCallTime } from "@/lib/dates";
 import type { CheckInRecord, TrackerSnapshot } from "@/lib/types";
@@ -22,7 +22,8 @@ export function Tracker({ snapshot, checkIns }: TrackerProps) {
 	const router = useRouter();
 	const [callPending, startCall] = useTransition();
 	const [checkInPending, startCheckIn] = useTransition();
-	const [error, setError] = useState<string | null>(null);
+	const [callError, setCallError] = useState<string | null>(null);
+	const [checkInError, setCheckInError] = useState<string | null>(null);
 	const storedName = useSyncExternalStore(
 		subscribeSavedName,
 		readSavedName,
@@ -41,11 +42,11 @@ export function Tracker({ snapshot, checkIns }: TrackerProps) {
 	 * Runs a server action then refreshes the snapshot.
 	 */
 	function run(action: () => Promise<{ ok: true } | { ok: false; error: string }>) {
-		setError(null);
+		setCallError(null);
 		startCall(async () => {
 			const result = await action();
 			if (!result.ok) {
-				setError(result.error);
+				setCallError(result.error);
 				return;
 			}
 			router.refresh();
@@ -56,11 +57,11 @@ export function Tracker({ snapshot, checkIns }: TrackerProps) {
 	 * Posts a named check-in, remembers the name locally, and clears the note.
 	 */
 	function submitCheckIn() {
-		setError(null);
+		setCheckInError(null);
 		startCheckIn(async () => {
 			const result = await leaveCheckIn(nameValue, note);
 			if (!result.ok) {
-				setError(result.error);
+				setCheckInError(result.error);
 				return;
 			}
 			const trimmed = nameValue.trim();
@@ -196,9 +197,9 @@ export function Tracker({ snapshot, checkIns }: TrackerProps) {
 				</button>
 			</div>
 
-			{error ? (
+			{callError ? (
 				<p className="mt-4 rounded-2xl bg-[#3a1f1f] px-4 py-3 text-center font-bold text-miss">
-					{error}
+					{callError}
 				</p>
 			) : null}
 
@@ -314,7 +315,7 @@ export function Tracker({ snapshot, checkIns }: TrackerProps) {
 						id="check-in-name"
 						value={nameValue}
 						onChange={(event) => setVisitorName(event.target.value)}
-						maxLength={24}
+						maxLength={MAX_CHECKIN_NAME}
 						placeholder="Your name"
 						autoComplete="name"
 						className="h-12 rounded-[18px] border-2 border-line bg-panel-2 px-4 font-extrabold text-snow placeholder:text-mute"
@@ -326,7 +327,7 @@ export function Tracker({ snapshot, checkIns }: TrackerProps) {
 						id="check-in-note"
 						value={note}
 						onChange={(event) => setNote(event.target.value)}
-						maxLength={80}
+						maxLength={MAX_CHECKIN_MESSAGE}
 						placeholder="A small message"
 						className="h-12 rounded-[18px] border-2 border-line bg-panel-2 px-4 font-extrabold text-snow placeholder:text-mute"
 					/>
@@ -338,6 +339,11 @@ export function Tracker({ snapshot, checkIns }: TrackerProps) {
 						{checkInPending ? "Saving…" : "I'm here"}
 					</button>
 				</form>
+				{checkInError ? (
+					<p className="mt-3 rounded-2xl bg-[#3a1f1f] px-4 py-3 text-center font-bold text-miss">
+						{checkInError}
+					</p>
+				) : null}
 			</section>
 
 			<p className="mt-auto pt-8 text-center text-xs font-bold text-line">

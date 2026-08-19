@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { latestCheckInByName, sanitizeCheckIn } from "./checkins";
+import { latestCheckInByName, MAX_CHECKIN_MESSAGE, MAX_CHECKIN_NAME, sanitizeCheckIn } from "./checkins";
 import type { CheckInRecord } from "./types";
 
 describe("sanitizeCheckIn", () => {
@@ -12,6 +12,14 @@ describe("sanitizeCheckIn", () => {
 
 	it("rejects a blank name", () => {
 		expect(() => sanitizeCheckIn("   ", "hello")).toThrow(/name/i);
+	});
+
+	it("caps name and message length", () => {
+		const name = "Z".repeat(40);
+		const message = "x".repeat(120);
+		const cleaned = sanitizeCheckIn(name, message);
+		expect(cleaned.name).toHaveLength(MAX_CHECKIN_NAME);
+		expect(cleaned.message).toHaveLength(MAX_CHECKIN_MESSAGE);
 	});
 });
 

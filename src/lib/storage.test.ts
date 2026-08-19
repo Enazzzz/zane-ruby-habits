@@ -10,7 +10,7 @@ const FILE_PATH = path.join(process.cwd(), "data", "calls.json");
  */
 afterEach(async () => {
 	await mkdir(path.dirname(FILE_PATH), { recursive: true });
-	await writeFile(FILE_PATH, `${JSON.stringify({ calls: [] }, null, "\t")}\n`);
+	await writeFile(FILE_PATH, `${JSON.stringify({ calls: [], checkIns: [] }, null, "\t")}\n`);
 });
 
 describe("file call log", () => {
@@ -46,5 +46,24 @@ describe("file call log", () => {
 			message: "just checking",
 			at: "2026-08-19T19:00:00.000Z",
 		});
+	});
+
+	it("keeps calls and check-ins when writing the other list", async () => {
+		await rm(FILE_PATH, { force: true });
+
+		const note = await addCheckIn(
+			"Ruby",
+			"hey",
+			new Date("2026-08-19T19:00:00.000Z"),
+		);
+		const call = await addCall(new Date("2026-08-19T18:00:00.000Z"));
+
+		expect(await listCheckIns()).toEqual([note]);
+		expect(await listCalls()).toHaveLength(1);
+		expect((await listCalls())[0]?.id).toBe(call.id);
+
+		await removeLastCall();
+		expect(await listCalls()).toEqual([]);
+		expect(await listCheckIns()).toEqual([note]);
 	});
 });
