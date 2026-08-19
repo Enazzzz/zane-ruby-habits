@@ -1,15 +1,50 @@
 import { buildSnapshot } from "@/lib/streak";
-import { getStorageKind, listCalls, listCheckIns } from "@/lib/storage";
+import { buildThinkingStats } from "@/lib/thinking";
+import { sortBucketItems } from "@/lib/bucket";
+import { PEOPLE } from "@/lib/config";
+import {
+	getStorageKind,
+	getTodayQuestion,
+	listBucket,
+	listCheckIns,
+	listCalls,
+	listQuestionBank,
+	listStatuses,
+	listThinking,
+} from "@/lib/storage";
 import { Tracker } from "@/components/tracker";
 
 export const dynamic = "force-dynamic";
 
 /**
- * Loads the shared call log and check-ins, then renders the tracker.
+ * Loads every shared board and renders the tracker.
  */
 export default async function Home() {
-	const [calls, checkIns] = await Promise.all([listCalls(), listCheckIns()]);
-	const snapshot = buildSnapshot(calls, new Date(), getStorageKind());
+	const now = new Date();
+	const storage = getStorageKind();
+	const [calls, checkIns, statuses, thinking, bucket, questionBank, todayQuestion] =
+		await Promise.all([
+			listCalls(),
+			listCheckIns(),
+			listStatuses(),
+			listThinking(),
+			listBucket(),
+			listQuestionBank(),
+			storage === "missing" ? Promise.resolve(null) : getTodayQuestion(now),
+		]);
 
-	return <Tracker snapshot={snapshot} checkIns={checkIns} />;
+	const snapshot = buildSnapshot(calls, now, storage);
+	const thinkingStats = buildThinkingStats(thinking, PEOPLE);
+
+	return (
+		<Tracker
+			snapshot={snapshot}
+			checkIns={checkIns}
+			statuses={statuses}
+			thinkingStats={thinkingStats}
+			todayQuestion={todayQuestion}
+			questionBankCount={questionBank.length}
+			bucket={sortBucketItems(bucket)}
+		/>
+	);
 }

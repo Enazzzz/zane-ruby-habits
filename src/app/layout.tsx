@@ -16,7 +16,7 @@ export const metadata: Metadata = {
 	),
 	title: "Zane & Ruby · Call Streak",
 	description:
-		"A shared Duolingo-style tracker for Zane and Ruby: call once a day, hit five days a week, and leave a note when you stop by.",
+		"A shared Duolingo-style board for Zane and Ruby: daily calls, status, thinking-of-you pings, questions, and a bucket list.",
 	applicationName: "Zane & Ruby Calls",
 	robots: { index: false, follow: false },
 	appleWebApp: {

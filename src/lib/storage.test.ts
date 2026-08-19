@@ -1,7 +1,19 @@
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { addCall, addCheckIn, listCalls, listCheckIns, removeLastCall } from "./storage";
+import {
+	addCall,
+	addCheckIn,
+	addThinking,
+	getTodayQuestion,
+	listCalls,
+	listCheckIns,
+	listStatuses,
+	listThinking,
+	removeLastCall,
+	suggestQuestion,
+	updateStatus,
+} from "./storage";
 
 const FILE_PATH = path.join(process.cwd(), "data", "calls.json");
 
@@ -10,7 +22,22 @@ const FILE_PATH = path.join(process.cwd(), "data", "calls.json");
  */
 afterEach(async () => {
 	await mkdir(path.dirname(FILE_PATH), { recursive: true });
-	await writeFile(FILE_PATH, `${JSON.stringify({ calls: [], checkIns: [] }, null, "\t")}\n`);
+	await writeFile(
+		FILE_PATH,
+		`${JSON.stringify(
+			{
+				calls: [],
+				checkIns: [],
+				statuses: {},
+				thinking: [],
+				questionBank: [],
+				dailyQuestions: [],
+				bucket: [],
+			},
+			null,
+			"\t",
+		)}\n`,
+	);
 });
 
 describe("file call log", () => {
@@ -65,5 +92,19 @@ describe("file call log", () => {
 		await removeLastCall();
 		expect(await listCalls()).toEqual([]);
 		expect(await listCheckIns()).toEqual([note]);
+	});
+
+	it("stores status, thinking pings, and daily questions", async () => {
+		await rm(FILE_PATH, { force: true });
+
+		await updateStatus("Zane", "Tyler", "Home", "Coding");
+		expect((await listStatuses()).map((item) => item.listeningTo)).toEqual(["Tyler"]);
+
+		await addThinking("Ruby");
+		expect(await listThinking()).toHaveLength(1);
+
+		await suggestQuestion("Favorite movie?", "Zane");
+		const today = await getTodayQuestion(new Date("2026-08-19T19:00:00.000Z"));
+		expect(today?.text).toBe("Favorite movie?");
 	});
 });

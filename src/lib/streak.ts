@@ -12,6 +12,7 @@ import {
 	weekdayLabel,
 	zonedYmd,
 } from "@/lib/dates";
+import { sumTalkMinutes } from "@/lib/duration";
 import type {
 	CallRecord,
 	DayCell,
@@ -229,6 +230,9 @@ export function buildSnapshot(
 	const currentWeekId = mondayOf(today);
 	const called = calledDaySet(calls, timeZone);
 	const dayCounts = countsByDate(calls, timeZone);
+	const todayCall = [...calls]
+		.sort((a, b) => b.at.localeCompare(a.at))
+		.find((call) => zonedYmd(new Date(call.at), timeZone) === today);
 	const oldestCallDay = earliestDay(called) ?? today;
 	const oldestWeekId = mondayOf(oldestCallDay);
 	const ids = weekIdsBetween(oldestWeekId, currentWeekId);
@@ -270,6 +274,8 @@ export function buildSnapshot(
 		streak: currentDailyStreak(called, today, goal, gracePerWeek),
 		bestStreak: bestDailyStreak(called, today, goal, gracePerWeek),
 		totalCalls: called.size,
+		totalTalkMinutes: sumTalkMinutes(calls),
+		todayDurationMinutes: todayCall?.durationMinutes ?? null,
 		days,
 		recentWeeks,
 		calls: [...calls].sort((a, b) => b.at.localeCompare(a.at)),
