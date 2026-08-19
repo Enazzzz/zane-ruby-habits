@@ -1,23 +1,28 @@
 # Zane & Ruby Call Streak Tracker
 
-Shared, no-login habit tracker for Zane and Ruby. Goal: call each other at least 5 times every week and keep a consecutive-week streak.
+Shared, no-login habit tracker for Zane and Ruby. Goal: call each other **once a day**, hit **5 days** every Monday–Sunday week (two grace misses), and keep a consecutive **day** streak. A separate **Last here** note lets each person timestamp when they last opened the site.
+
+Live site: https://zane-ruby-habits.vercel.app
 
 ## Product
 
 - One public page. No accounts, PINs, or invite codes.
-- One shared log: each tap is one call between them.
-- Weekly goal is 5 calls (Monday–Sunday in `America/Los_Angeles`).
-- Streak counts consecutive weeks that hit the goal. The current week can extend the streak as soon as it hits 5; a miss only breaks the streak after that week ends.
+- One shared call log: each tap is one call between them. **One call per calendar day.**
+- Streaks are counted in **days**. Each week allows **two grace misses**. A finished week with fewer than 5 call-days **breaks the streak**. Extra days are fine.
+- A week runs Monday–Sunday in `America/Los_Angeles`.
 - Accidental taps can be undone (removes the most recent call).
+- **Last here:** name + optional short message + automatic timestamp. Newest note per name is shown. This is a visit log, not part of the streak.
 - Dark Duolingo-style UI, mobile-first.
 
 ## Architecture
 
 - Next.js App Router on Vercel.
-- Server Actions mutate the log; the home page reads it.
-- Durable store: Upstash Redis when `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN` are set.
-- Local fallback: `data/calls.json` for development.
+- Server Actions mutate the logs; the home page reads them.
+- Durable store: Upstash Redis when Marketplace `KV_REST_API_*` or official `UPSTASH_REDIS_REST_*` vars are set.
+- Redis lists: `zane-ruby:calls` and `zane-ruby:checkins` (capped at 80 notes).
+- Local fallback: `data/calls.json` (`calls` + `checkIns`) for development.
 
 ## Non-goals
 
 - Individual per-person scores, auth, notifications, or social features.
+- Treating a website visit as a logged call.
