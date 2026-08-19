@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState, useTransition } from "react";
+import { useState, useSyncExternalStore, useTransition } from "react";
 import { leaveCheckIn, logCall, undoCall } from "@/app/actions";
 import { latestCheckInByName } from "@/lib/checkins";
 import { PEOPLE } from "@/lib/config";
@@ -23,27 +23,19 @@ export function Tracker({ snapshot, checkIns }: TrackerProps) {
 	const [callPending, startCall] = useTransition();
 	const [checkInPending, startCheckIn] = useTransition();
 	const [error, setError] = useState<string | null>(null);
-	const [visitorName, setVisitorName] = useState("");
+	const storedName = useSyncExternalStore(
+		subscribeSavedName,
+		readSavedName,
+		() => "",
+	);
+	const [visitorName, setVisitorName] = useState<string | null>(null);
 	const [note, setNote] = useState("");
 	const names = snapshot.people.join(" & ");
 	const lastCall = snapshot.calls[0];
 	const alreadyToday = snapshot.calledToday;
 	const latestVisits = latestCheckInByName(checkIns);
 	const busy = callPending || checkInPending;
-
-	/**
-	 * Restores the last name this browser used on a check-in.
-	 */
-	useEffect(() => {
-		try {
-			const saved = window.localStorage.getItem(SAVED_NAME_KEY);
-			if (saved) {
-				setVisitorName(saved);
-			}
-		} catch {
-			// Private mode can block localStorage; the name field still works.
-		}
-	}, []);
+	const nameValue = visitorName ?? storedName;
 
 	/**
 	 * Runs a server action then refreshes the snapshot.
@@ -66,16 +58,18 @@ export function Tracker({ snapshot, checkIns }: TrackerProps) {
 	function submitCheckIn() {
 		setError(null);
 		startCheckIn(async () => {
-			const result = await leaveCheckIn(visitorName, note);
+			const result = await leaveCheckIn(nameValue, note);
 			if (!result.ok) {
 				setError(result.error);
 				return;
 			}
+			const trimmed = nameValue.trim();
 			try {
-				window.localStorage.setItem(SAVED_NAME_KEY, visitorName.trim());
+				window.localStorage.setItem(SAVED_NAME_KEY, trimmed);
 			} catch {
 				// Ignoring storage errors keeps the shared log as the source of truth.
 			}
+			setVisitorName(trimmed);
 			setNote("");
 			router.refresh();
 		});
@@ -295,7 +289,7 @@ export function Tracker({ snapshot, checkIns }: TrackerProps) {
 				>
 					<div className="flex gap-2">
 						{PEOPLE.map((person) => {
-							const selected = visitorName.trim().toLowerCase() === person.toLowerCase();
+							const selected = nameValue.trim().toLowerCase() === person.toLowerCase();
 							return (
 								<button
 									key={person}
@@ -318,7 +312,7 @@ export function Tracker({ snapshot, checkIns }: TrackerProps) {
 					</label>
 					<input
 						id="check-in-name"
-						value={visitorName}
+						value={nameValue}
 						onChange={(event) => setVisitorName(event.target.value)}
 						maxLength={24}
 						placeholder="Your name"
@@ -338,7 +332,7 @@ export function Tracker({ snapshot, checkIns }: TrackerProps) {
 					/>
 					<button
 						type="submit"
-						disabled={busy || visitorName.trim().length === 0}
+						disabled={busy || nameValue.trim().length === 0}
 						className="duo-press h-14 rounded-[18px] bg-duo text-lg font-black text-ink disabled:bg-line disabled:text-mute"
 					>
 						{checkInPending ? "Saving…" : "I'm here"}
@@ -352,6 +346,25 @@ export function Tracker({ snapshot, checkIns }: TrackerProps) {
 			</p>
 		</main>
 	);
+}
+
+/**
+ * Reads the last check-in name this browser saved, if any.
+ */
+function readSavedName(): string {
+	try {
+		return window.localStorage.getItem(SAVED_NAME_KEY) ?? "";
+	} catch {
+		return "";
+	}
+}
+
+/**
+ * Re-reads the saved name when another tab updates localStorage.
+ */
+function subscribeSavedName(onStoreChange: () => void): () => void {
+	window.addEventListener("storage", onStoreChange);
+	return () => window.removeEventListener("storage", onStoreChange);
 }
 
 /**
