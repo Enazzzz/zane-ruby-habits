@@ -30,9 +30,10 @@ npm run build
 ## Deploy on Vercel
 
 1. Import this GitHub repo into [Vercel](https://vercel.com/new).
-2. Add **Upstash Redis** from the Vercel Marketplace (Storage → Create → Upstash Redis). That injects `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`.
-3. Redeploy.
+2. Add **Upstash Redis** from the Vercel Marketplace. Stores named `upstash-kv-*` inject `KV_REST_API_URL` and `KV_REST_API_TOKEN`.
+3. On the store page, **Connect Project** to this app for Production, Preview, and Development.
+4. Redeploy so the new env vars are actually in the running site.
 
-Until Redis is connected, the page still loads, but logged calls will not persist in production.
+Until the store is connected and the app is redeployed, logged calls will not persist.
 
 Then send Ruby the production URL. That is the whole product.
