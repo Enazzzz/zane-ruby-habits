@@ -1,15 +1,15 @@
 import { buildSnapshot } from "@/lib/streak";
-import { getStorageKind, listCalls } from "@/lib/storage";
+import { getStorageKind, listCalls, listCheckIns } from "@/lib/storage";
 import { Tracker } from "@/components/tracker";
 
 export const dynamic = "force-dynamic";
 
 /**
- * Loads the shared call log and renders the tracker.
+ * Loads the shared call log and check-ins, then renders the tracker.
  */
 export default async function Home() {
-	const calls = await listCalls();
+	const [calls, checkIns] = await Promise.all([listCalls(), listCheckIns()]);
 	const snapshot = buildSnapshot(calls, new Date(), getStorageKind());
 
-	return <Tracker snapshot={snapshot} />;
+	return <Tracker snapshot={snapshot} checkIns={checkIns} />;
 }

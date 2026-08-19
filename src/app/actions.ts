@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { addCall, removeLastCall } from "@/lib/storage";
+import { addCall, addCheckIn, removeLastCall } from "@/lib/storage";
 
 /**
  * Logs one shared call happening right now.
@@ -31,6 +31,25 @@ export async function undoCall(): Promise<{ ok: true } | { ok: false; error: str
 		return {
 			ok: false,
 			error: error instanceof Error ? error.message : "Could not undo that call.",
+		};
+	}
+}
+
+/**
+ * Saves a named "I was here" note with an automatic timestamp.
+ */
+export async function leaveCheckIn(
+	name: string,
+	message: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+	try {
+		await addCheckIn(name, message);
+		revalidatePath("/");
+		return { ok: true };
+	} catch (error) {
+		return {
+			ok: false,
+			error: error instanceof Error ? error.message : "Could not save that note.",
 		};
 	}
 }

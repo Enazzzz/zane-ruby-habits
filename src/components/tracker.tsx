@@ -1,37 +1,82 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
-import { logCall, undoCall } from "@/app/actions";
+import { useEffect, useState, useTransition } from "react";
+import { leaveCheckIn, logCall, undoCall } from "@/app/actions";
+import { latestCheckInByName } from "@/lib/checkins";
+import { PEOPLE } from "@/lib/config";
 import { formatCallTime } from "@/lib/dates";
-import type { TrackerSnapshot } from "@/lib/types";
+import type { CheckInRecord, TrackerSnapshot } from "@/lib/types";
+
+const SAVED_NAME_KEY = "zane-ruby:checkin-name";
 
 type TrackerProps = {
 	snapshot: TrackerSnapshot;
+	checkIns: CheckInRecord[];
 };
 
 /**
  * Interactive board for logging one shared call a day and reading the streak.
  */
-export function Tracker({ snapshot }: TrackerProps) {
+export function Tracker({ snapshot, checkIns }: TrackerProps) {
 	const router = useRouter();
-	const [pending, startTransition] = useTransition();
+	const [callPending, startCall] = useTransition();
+	const [checkInPending, startCheckIn] = useTransition();
 	const [error, setError] = useState<string | null>(null);
+	const [visitorName, setVisitorName] = useState("");
+	const [note, setNote] = useState("");
 	const names = snapshot.people.join(" & ");
 	const lastCall = snapshot.calls[0];
 	const alreadyToday = snapshot.calledToday;
+	const latestVisits = latestCheckInByName(checkIns);
+	const busy = callPending || checkInPending;
+
+	/**
+	 * Restores the last name this browser used on a check-in.
+	 */
+	useEffect(() => {
+		try {
+			const saved = window.localStorage.getItem(SAVED_NAME_KEY);
+			if (saved) {
+				setVisitorName(saved);
+			}
+		} catch {
+			// Private mode can block localStorage; the name field still works.
+		}
+	}, []);
 
 	/**
 	 * Runs a server action then refreshes the snapshot.
 	 */
 	function run(action: () => Promise<{ ok: true } | { ok: false; error: string }>) {
 		setError(null);
-		startTransition(async () => {
+		startCall(async () => {
 			const result = await action();
 			if (!result.ok) {
 				setError(result.error);
 				return;
 			}
+			router.refresh();
+		});
+	}
+
+	/**
+	 * Posts a named check-in, remembers the name locally, and clears the note.
+	 */
+	function submitCheckIn() {
+		setError(null);
+		startCheckIn(async () => {
+			const result = await leaveCheckIn(visitorName, note);
+			if (!result.ok) {
+				setError(result.error);
+				return;
+			}
+			try {
+				window.localStorage.setItem(SAVED_NAME_KEY, visitorName.trim());
+			} catch {
+				// Ignoring storage errors keeps the shared log as the source of truth.
+			}
+			setNote("");
 			router.refresh();
 		});
 	}
@@ -141,15 +186,15 @@ export function Tracker({ snapshot }: TrackerProps) {
 			<div className="mt-8 flex flex-col gap-3">
 				<button
 					type="button"
-					disabled={pending || alreadyToday}
+					disabled={busy || alreadyToday}
 					onClick={() => run(logCall)}
 					className="duo-press h-16 rounded-[18px] bg-duo text-2xl font-black text-ink disabled:bg-line disabled:text-mute"
 				>
-					{pending ? "Saving…" : alreadyToday ? "Called today" : "We called"}
+					{callPending ? "Saving…" : alreadyToday ? "Called today" : "We called"}
 				</button>
 				<button
 					type="button"
-					disabled={pending || snapshot.calls.length === 0}
+					disabled={busy || snapshot.calls.length === 0}
 					onClick={() => run(undoCall)}
 					className="h-12 rounded-[18px] border-2 border-line bg-transparent text-base font-extrabold text-mute disabled:opacity-40"
 				>
@@ -213,6 +258,92 @@ export function Tracker({ snapshot }: TrackerProps) {
 						</li>
 					))}
 				</ul>
+			</section>
+
+			<section className="mt-8 overflow-hidden rounded-[28px] bg-panel p-5 shadow-[0_8px_0_#152226]">
+				<h2 className="text-xl font-black">Last here</h2>
+				<p className="mt-1 font-bold text-mute">
+					Leave a name and a tiny note so the other person knows you stopped by.
+				</p>
+				{latestVisits.length === 0 ? (
+					<p className="mt-4 rounded-2xl bg-panel-2 px-4 py-3 text-sm font-bold text-mute">
+						Nobody has checked in yet.
+					</p>
+				) : (
+					<ul className="mt-4 space-y-2">
+						{latestVisits.map((visit) => (
+							<li key={visit.id} className="rounded-2xl bg-panel-2 px-4 py-3">
+								<div className="flex items-baseline justify-between gap-3">
+									<p className="font-black">{visit.name}</p>
+									<p className="text-xs font-extrabold text-mute">
+										{formatCallTime(visit.at, snapshot.timezone)}
+									</p>
+								</div>
+								<p className="mt-1 text-sm font-bold text-mute">
+									{visit.message || "was here"}
+								</p>
+							</li>
+						))}
+					</ul>
+				)}
+				<form
+					className="mt-4 flex flex-col gap-3"
+					onSubmit={(event) => {
+						event.preventDefault();
+						submitCheckIn();
+					}}
+				>
+					<div className="flex gap-2">
+						{PEOPLE.map((person) => {
+							const selected = visitorName.trim().toLowerCase() === person.toLowerCase();
+							return (
+								<button
+									key={person}
+									type="button"
+									disabled={busy}
+									onClick={() => setVisitorName(person)}
+									className={`h-10 flex-1 rounded-full text-sm font-black ${
+										selected
+											? "bg-duo text-ink"
+											: "border-2 border-line bg-transparent text-mute"
+									}`}
+								>
+									{person}
+								</button>
+							);
+						})}
+					</div>
+					<label className="sr-only" htmlFor="check-in-name">
+						Your name
+					</label>
+					<input
+						id="check-in-name"
+						value={visitorName}
+						onChange={(event) => setVisitorName(event.target.value)}
+						maxLength={24}
+						placeholder="Your name"
+						autoComplete="name"
+						className="h-12 rounded-[18px] border-2 border-line bg-panel-2 px-4 font-extrabold text-snow placeholder:text-mute"
+					/>
+					<label className="sr-only" htmlFor="check-in-note">
+						A small message
+					</label>
+					<input
+						id="check-in-note"
+						value={note}
+						onChange={(event) => setNote(event.target.value)}
+						maxLength={80}
+						placeholder="A small message"
+						className="h-12 rounded-[18px] border-2 border-line bg-panel-2 px-4 font-extrabold text-snow placeholder:text-mute"
+					/>
+					<button
+						type="submit"
+						disabled={busy || visitorName.trim().length === 0}
+						className="duo-press h-14 rounded-[18px] bg-duo text-lg font-black text-ink disabled:bg-line disabled:text-mute"
+					>
+						{checkInPending ? "Saving…" : "I'm here"}
+					</button>
+				</form>
 			</section>
 
 			<p className="mt-auto pt-8 text-center text-xs font-bold text-line">

@@ -8,6 +8,17 @@ export type CallRecord = {
 };
 
 /**
+ * A named "I was here" note with an automatic timestamp.
+ */
+export type CheckInRecord = {
+	id: string;
+	name: string;
+	message: string;
+	/** ISO-8601 timestamp in UTC. */
+	at: string;
+};
+
+/**
  * One calendar day inside the current week view.
  */
 export type DayCell = {

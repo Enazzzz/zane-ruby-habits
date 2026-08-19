@@ -18,5 +18,11 @@ export const TRACKER_TIMEZONE = "America/Los_Angeles";
 /** Redis list key for the shared call log. */
 export const REDIS_CALLS_KEY = "zane-ruby:calls";
 
+/** Redis list key for "I'm here" check-in notes. */
+export const REDIS_CHECKINS_KEY = "zane-ruby:checkins";
+
+/** Cap stored check-ins so the log cannot grow forever. */
+export const MAX_CHECKINS = 80;
+
 /** One logged call per civil day. */
 export const MAX_CALLS_PER_DAY = 1;

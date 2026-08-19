@@ -1,9 +1,16 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { Redis } from "@upstash/redis";
-import { MAX_CALLS_PER_DAY, REDIS_CALLS_KEY, TRACKER_TIMEZONE } from "@/lib/config";
+import { sanitizeCheckIn } from "@/lib/checkins";
+import {
+	MAX_CALLS_PER_DAY,
+	MAX_CHECKINS,
+	REDIS_CALLS_KEY,
+	REDIS_CHECKINS_KEY,
+	TRACKER_TIMEZONE,
+} from "@/lib/config";
 import { zonedYmd } from "@/lib/dates";
-import type { CallRecord } from "@/lib/types";
+import type { CallRecord, CheckInRecord } from "@/lib/types";
 
 /** On-disk log used for local development when Redis is not configured. */
 const FILE_PATH = path.join(process.cwd(), "data", "calls.json");
@@ -15,6 +22,11 @@ const REDIS_URL_KEYS = ["UPSTASH_REDIS_REST_URL", "KV_REST_API_URL"] as const;
 const REDIS_TOKEN_KEYS = ["UPSTASH_REDIS_REST_TOKEN", "KV_REST_API_TOKEN"] as const;
 
 let redisClient: Redis | null | undefined;
+
+type FileStore = {
+	calls: CallRecord[];
+	checkIns: CheckInRecord[];
+};
 
 /**
  * Reads Redis REST credentials from an env map.
@@ -101,7 +113,26 @@ export async function listCalls(): Promise<CallRecord[]> {
 		return [];
 	}
 
-	return readFileStore();
+	return (await readFileStore()).calls;
+}
+
+/**
+ * Reads check-in notes, oldest first.
+ */
+export async function listCheckIns(): Promise<CheckInRecord[]> {
+	const redis = getRedis();
+	if (redis) {
+		const rows = await redis.lrange<string>(REDIS_CHECKINS_KEY, 0, -1);
+		return rows
+			.map(parseCheckIn)
+			.filter((item): item is CheckInRecord => item !== null);
+	}
+
+	if (getStorageKind() === "missing") {
+		return [];
+	}
+
+	return (await readFileStore()).checkIns;
 }
 
 /**
@@ -135,7 +166,46 @@ export async function addCall(at = new Date()): Promise<CallRecord> {
 		return record;
 	}
 
-	await writeFileStore([...calls, record]);
+	const store = await readFileStore();
+	await writeFileStore({ calls: [...store.calls, record], checkIns: store.checkIns });
+	return record;
+}
+
+/**
+ * Saves a named check-in note with an automatic timestamp.
+ */
+export async function addCheckIn(
+	name: string,
+	message: string,
+	at = new Date(),
+): Promise<CheckInRecord> {
+	if (getStorageKind() === "missing") {
+		throw new Error(
+			"Redis is not visible to this deploy. Connect the Upstash store to this Vercel project, then Redeploy.",
+		);
+	}
+
+	const cleaned = sanitizeCheckIn(name, message);
+	const record: CheckInRecord = {
+		id: crypto.randomUUID(),
+		name: cleaned.name,
+		message: cleaned.message,
+		at: at.toISOString(),
+	};
+
+	const redis = getRedis();
+	if (redis) {
+		await redis.rpush(REDIS_CHECKINS_KEY, JSON.stringify(record));
+		const length = await redis.llen(REDIS_CHECKINS_KEY);
+		if (length > MAX_CHECKINS) {
+			await redis.ltrim(REDIS_CHECKINS_KEY, -MAX_CHECKINS, -1);
+		}
+		return record;
+	}
+
+	const store = await readFileStore();
+	const checkIns = [...store.checkIns, record].slice(-MAX_CHECKINS);
+	await writeFileStore({ calls: store.calls, checkIns });
 	return record;
 }
 
@@ -155,9 +225,9 @@ export async function removeLastCall(): Promise<CallRecord | null> {
 		return raw ? parseCall(raw) : null;
 	}
 
-	const calls = await readFileStore();
-	const last = calls.pop() ?? null;
-	await writeFileStore(calls);
+	const store = await readFileStore();
+	const last = store.calls.pop() ?? null;
+	await writeFileStore(store);
 	return last;
 }
 
@@ -186,16 +256,61 @@ function parseCall(raw: string | CallRecord): CallRecord | null {
 }
 
 /**
- * Loads the local JSON log, returning an empty list when the file is missing.
+ * Parses a Redis list entry into a check-in note.
  */
-async function readFileStore(): Promise<CallRecord[]> {
+function parseCheckIn(raw: string | CheckInRecord): CheckInRecord | null {
+	if (
+		typeof raw === "object" &&
+		raw &&
+		"id" in raw &&
+		"name" in raw &&
+		"at" in raw
+	) {
+		return raw as CheckInRecord;
+	}
+
+	if (typeof raw !== "string") {
+		return null;
+	}
+
+	try {
+		const parsed = JSON.parse(raw) as CheckInRecord;
+		if (
+			typeof parsed.id === "string" &&
+			typeof parsed.name === "string" &&
+			typeof parsed.at === "string"
+		) {
+			return {
+				id: parsed.id,
+				name: parsed.name,
+				message: typeof parsed.message === "string" ? parsed.message : "",
+				at: parsed.at,
+			};
+		}
+	} catch {
+		return null;
+	}
+
+	return null;
+}
+
+/**
+ * Loads the local JSON log, returning empty lists when the file is missing.
+ */
+async function readFileStore(): Promise<FileStore> {
 	try {
 		const contents = await readFile(FILE_PATH, "utf8");
-		const parsed = JSON.parse(contents) as { calls?: CallRecord[] };
-		return Array.isArray(parsed.calls) ? parsed.calls : [];
+		const parsed = JSON.parse(contents) as {
+			calls?: CallRecord[];
+			checkIns?: CheckInRecord[];
+		};
+		return {
+			calls: Array.isArray(parsed.calls) ? parsed.calls : [],
+			checkIns: Array.isArray(parsed.checkIns) ? parsed.checkIns : [],
+		};
 	} catch (error) {
 		if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-			return [];
+			return { calls: [], checkIns: [] };
 		}
 		throw error;
 	}
@@ -204,7 +319,7 @@ async function readFileStore(): Promise<CallRecord[]> {
 /**
  * Writes the local JSON log, creating the data directory if needed.
  */
-async function writeFileStore(calls: CallRecord[]): Promise<void> {
+async function writeFileStore(store: FileStore): Promise<void> {
 	await mkdir(path.dirname(FILE_PATH), { recursive: true });
-	await writeFile(FILE_PATH, `${JSON.stringify({ calls }, null, "\t")}\n`, "utf8");
+	await writeFile(FILE_PATH, `${JSON.stringify(store, null, "\t")}\n`, "utf8");
 }
