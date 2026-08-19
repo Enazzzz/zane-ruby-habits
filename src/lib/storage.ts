@@ -8,7 +8,53 @@ import type { CallRecord } from "@/lib/types";
 /** On-disk log used for local development when Redis is not configured. */
 const FILE_PATH = path.join(process.cwd(), "data", "calls.json");
 
+/** Canonical URL names, plus Vercel Marketplace KV aliases. */
+const REDIS_URL_KEYS = ["UPSTASH_REDIS_REST_URL", "KV_REST_API_URL"] as const;
+
+/** Canonical token names, plus Vercel Marketplace KV aliases. */
+const REDIS_TOKEN_KEYS = ["UPSTASH_REDIS_REST_TOKEN", "KV_REST_API_TOKEN"] as const;
+
 let redisClient: Redis | null | undefined;
+
+/**
+ * Reads Redis REST credentials from an env map.
+ * Accepts official Upstash names, Marketplace KV names, and prefixed copies.
+ */
+export function readRedisCredentials(
+	env: NodeJS.Dict<string | undefined> = process.env,
+): { url: string; token: string } | null {
+	const url = readEnvValue(env, REDIS_URL_KEYS);
+	const token = readEnvValue(env, REDIS_TOKEN_KEYS);
+	if (!url || !token) {
+		return null;
+	}
+	return { url, token };
+}
+
+/**
+ * Returns the first non-empty env value for a canonical name or `*_NAME` prefix.
+ */
+function readEnvValue(
+	env: NodeJS.Dict<string | undefined>,
+	names: readonly string[],
+): string | undefined {
+	for (const name of names) {
+		const direct = env[name];
+		if (direct) {
+			return direct;
+		}
+	}
+
+	const keys = Object.keys(env);
+	for (const name of names) {
+		const match = keys.find((key) => key.endsWith(`_${name}`) && env[key]);
+		if (match) {
+			return env[match];
+		}
+	}
+
+	return undefined;
+}
 
 /**
  * Returns a Redis client when Upstash env vars are present.
@@ -19,9 +65,10 @@ function getRedis(): Redis | null {
 		return redisClient;
 	}
 
-	const url = process.env.UPSTASH_REDIS_REST_URL;
-	const token = process.env.UPSTASH_REDIS_REST_TOKEN;
-	redisClient = url && token ? new Redis({ url, token }) : null;
+	const credentials = readRedisCredentials();
+	redisClient = credentials
+		? new Redis({ url: credentials.url, token: credentials.token })
+		: null;
 	return redisClient;
 }
 
@@ -63,7 +110,7 @@ export async function listCalls(): Promise<CallRecord[]> {
 export async function addCall(at = new Date()): Promise<CallRecord> {
 	if (getStorageKind() === "missing") {
 		throw new Error(
-			"Add an Upstash Redis store in the Vercel dashboard so calls can persist.",
+			"Redis is not visible to this deploy. Connect the Upstash store to this Vercel project, then Redeploy.",
 		);
 	}
 
@@ -98,7 +145,7 @@ export async function addCall(at = new Date()): Promise<CallRecord> {
 export async function removeLastCall(): Promise<CallRecord | null> {
 	if (getStorageKind() === "missing") {
 		throw new Error(
-			"Add an Upstash Redis store in the Vercel dashboard so calls can persist.",
+			"Redis is not visible to this deploy. Connect the Upstash store to this Vercel project, then Redeploy.",
 		);
 	}
 

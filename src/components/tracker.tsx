@@ -140,7 +140,8 @@ export function Tracker({ snapshot }: TrackerProps) {
 
 			{snapshot.storage === "missing" ? (
 				<p className="mt-4 rounded-2xl bg-panel-2 px-4 py-3 text-center text-sm font-bold text-mute">
-					Connect Upstash Redis in Vercel so this log survives deploys.
+					This deploy cannot see Redis yet. On the Upstash store, connect this
+					project, then Redeploy so KV_REST_API_URL lands in production.
 				</p>
 			) : null}
 
