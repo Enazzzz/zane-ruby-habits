@@ -45,7 +45,7 @@ export function Tracker({ snapshot }: TrackerProps) {
 				<p className="mt-2 text-mute">Five times a week. See how long you last.</p>
 			</header>
 
-			<section className="rounded-[28px] bg-panel p-5 shadow-[0_8px_0_#152226]">
+			<section className="overflow-hidden rounded-[28px] bg-panel p-5 shadow-[0_8px_0_#152226]">
 				<div className="flex items-end justify-between gap-4">
 					<div>
 						<p className="text-sm font-extrabold uppercase tracking-widest text-mute">
@@ -63,7 +63,7 @@ export function Tracker({ snapshot }: TrackerProps) {
 				</p>
 			</section>
 
-			<section className="mt-5 rounded-[28px] bg-panel p-5 shadow-[0_8px_0_#152226]">
+			<section className="mt-5 overflow-hidden rounded-[28px] bg-panel p-5 shadow-[0_8px_0_#152226]">
 				<div className="flex items-baseline justify-between">
 					<h2 className="text-xl font-black">This week</h2>
 					<p className="font-black text-duo">
@@ -203,13 +203,11 @@ function FlameIcon({ lit }: { lit: boolean }) {
 	return (
 		<div
 			aria-hidden="true"
-			className={`flex h-24 w-24 items-center justify-center rounded-[28px] ${
-				lit ? "bg-[#3a2a12] text-flame" : "bg-panel-2 text-line"
+			className={`flex h-24 w-24 items-center justify-center rounded-[28px] text-6xl ${
+				lit ? "bg-[#3a2a12]" : "bg-panel-2 grayscale opacity-45"
 			}`}
 		>
-			<svg viewBox="0 0 64 64" className="h-14 w-14" fill="currentColor">
-				<path d="M32 6c1 10-8 14-8 24 0 4 2 7 5 9-6-1-10-7-10-14 0-6 3-11 6-16-9 7-15 17-15 27 0 13 10 24 22 24s22-11 22-24C54 22 42 12 32 6zm0 50c-8 0-14-7-14-16 0-6 3-10 6-14 1 7 6 11 11 12-4 2-7 6-7 11 0 4 3 7 7 7 8 0 12-7 10-16 7 4 11 11 11 18 0 9-6 16-14 16z" />
-			</svg>
+			🔥
 		</div>
 	);
 }
